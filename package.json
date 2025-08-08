@@ -1,0 +1,28 @@
+{
+  "name": "tg-vibecoders-dashboard",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Ultra-MVP Telegram dashboard (last 24h) — Express + pg",
+  "main": "server.js",
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "dotenv": "^16.4.5",
+    "next": "^14.2.5",
+    "pg": "^8.12.0",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1"
+  },
+  "devDependencies": {
+    "@types/node": "24.2.1",
+    "@types/react": "19.1.9",
+    "nodemon": "^3.1.0",
+    "typescript": "5.9.2"
+  }
+}
