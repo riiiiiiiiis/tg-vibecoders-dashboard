@@ -58,3 +58,29 @@ npm start
   - `users(id, first_name, last_name, username)`
 - Replies считаются по ключу `raw_message -> reply_to_message`.
 
+## Диаграмма потока данных (простой дайджест)
+
+```mermaid
+graph TD
+  A[Клиент / UI] -->|GET /api/report/generate-simple?date| B[API: generate-simple]
+  B --> C[Postgres\nSELECT id, author, text]
+  B --> D[OpenAI Responses API\nmodel: OPENAI_MODEL\nformat: json_schema\nDAILY_DIGEST_SCHEMA]
+  D -->|JSON дайджест| B
+  B --> E[Проверка Zod\nDailyDigestSchema]
+  E -->|ok| F[renderDigest\nMarkdown]
+  F --> G[Ответ { json, markdown }]
+  E -->|fail| H[422 json_schema_validation_failed]
+
+  %% Легенда
+  classDef api fill:#dff,stroke:#06c;
+  classDef ext fill:#ffd,stroke:#c60;
+  classDef db fill:#efe,stroke:#0a0;
+  class B api;
+  class D ext;
+  class C db;
+```
+
+## Авторство
+
+Код и интеграция пайплайна (LLM + strict JSON Schema + рендер) написаны GPT‑5 по ТЗ автора.
+
