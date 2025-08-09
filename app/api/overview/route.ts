@@ -43,19 +43,37 @@ export async function GET(request: Request) {
   const url = new URL(request.url);
   const daysParam = parseInt(url.searchParams.get('days') || '1', 10);
   const windowDays = Number.isFinite(daysParam) && daysParam > 0 && daysParam <= 30 ? daysParam : 1;
+  const chatIdParam = url.searchParams.get('chat_id');
+  const chatFilterEnabled = !!(chatIdParam && chatIdParam.trim() !== '' && chatIdParam.toLowerCase() !== 'all');
 
   const now = new Date();
   const since = new Date(now.getTime() - windowDays * 24 * 60 * 60 * 1000);
   const until = now;
-  const baseWhere = `sent_at >= $1 AND sent_at < $2`;
+  const baseWhere = `sent_at >= $1 AND sent_at < $2` + (chatFilterEnabled ? ` AND chat_id::text = $3` : '');
+  const baseWhereChatsOnly = `sent_at >= $1 AND sent_at < $2`;
 
   const client = await pool.connect();
   try {
-    const [qTotal, qUnique, qReplies, qWithLinks] = await Promise.all([
-      client.query(`SELECT COUNT(*)::int AS cnt FROM messages WHERE ${baseWhere}`, [since, until]),
-      client.query(`SELECT COUNT(DISTINCT user_id)::int AS cnt FROM messages WHERE ${baseWhere}`, [since, until]),
-      client.query(`SELECT COUNT(*)::int AS cnt FROM messages WHERE ${baseWhere} AND raw_message ? 'reply_to_message'`, [since, until]),
-      client.query(`SELECT COUNT(*)::int AS cnt FROM messages WHERE ${baseWhere} AND text ILIKE '%http%'`, [since, until]),
+    const paramsBase: any[] = [since, until];
+    if (chatFilterEnabled) paramsBase.push(chatIdParam);
+    const extraOffset = chatFilterEnabled ? 1 : 0;
+
+    const [qTotal, qUnique, qReplies, qWithLinks, chatsRes] = await Promise.all([
+      client.query(`SELECT COUNT(*)::int AS cnt FROM messages WHERE ${baseWhere}`, paramsBase),
+      client.query(`SELECT COUNT(DISTINCT user_id)::int AS cnt FROM messages WHERE ${baseWhere}`, paramsBase),
+      client.query(`SELECT COUNT(*)::int AS cnt FROM messages WHERE ${baseWhere} AND raw_message ? 'reply_to_message'`, paramsBase),
+      client.query(`SELECT COUNT(*)::int AS cnt FROM messages WHERE ${baseWhere} AND text ILIKE '%http%'`, paramsBase),
+      client.query(
+        `SELECT chat_id,
+                COALESCE(NULLIF(TRIM((raw_message->'chat'->>'title')), ''), NULL) AS title,
+                COUNT(*)::int AS cnt
+         FROM messages
+         WHERE ${baseWhereChatsOnly}
+         GROUP BY chat_id, title
+         ORDER BY cnt DESC
+         LIMIT 100`,
+        [since, until]
+      ),
     ]);
 
     const totalMsgs = qTotal.rows[0].cnt;
@@ -67,14 +85,14 @@ export async function GET(request: Request) {
     const hourlyRes = await client.query(
       `SELECT date_trunc('hour', sent_at) AS hour, COUNT(*)::int AS cnt
        FROM messages WHERE ${baseWhere} GROUP BY 1 ORDER BY 1 ASC`,
-      [since, until]
+      paramsBase
     );
     const hourly = hourlyRes.rows.map((r) => ({ hour: r.hour.toISOString(), cnt: r.cnt }));
 
     const dailyRes = await client.query(
       `SELECT date_trunc('day', sent_at) AS day, COUNT(*)::int AS cnt
        FROM messages WHERE ${baseWhere} GROUP BY 1 ORDER BY 1 ASC`,
-      [since, until]
+      paramsBase
     );
     const daily = dailyRes.rows.map((r) => ({ day: r.day.toISOString(), cnt: r.cnt }));
 
@@ -90,14 +108,18 @@ export async function GET(request: Request) {
        GROUP BY 1, 2, 3, 4
        ORDER BY cnt DESC
        LIMIT 10`,
-      [since, until]
+      paramsBase
     );
     const topUsers = topUsersRes.rows.map((r) => ({ user: normalizeUsernameOrId(r), cnt: r.cnt }));
 
     const textsRes = await client.query(
-      `SELECT message_id AS id, text, (raw_message->'reply_to_message'->>'message_id') AS reply_to_message_id
+      `SELECT message_id AS id,
+              text,
+              user_id,
+              sent_at,
+              (raw_message->'reply_to_message'->>'message_id') AS reply_to_message_id
        FROM messages WHERE ${baseWhere}`,
-      [since, until]
+      paramsBase
     );
 
     const linkCountMap = new Map<string, number>();
@@ -121,14 +143,14 @@ export async function GET(request: Request) {
     }
     const rootIds = Array.from(replyCountMap.keys());
     let rootPreviews = new Map<string, string>();
-    if (rootIds.length > 0) {
+      if (rootIds.length > 0) {
       const chunkSize = 1000;
       for (let i = 0; i < rootIds.length; i += chunkSize) {
         const chunk = rootIds.slice(i, i + chunkSize);
-        const params = chunk.map((_, idx) => `$${idx + 3}`).join(', ');
+          const params = chunk.map((_, idx) => `$${idx + 3 + extraOffset}`).join(', ');
         const q = `SELECT message_id AS id, COALESCE(NULLIF(TRIM(text), ''), '[no text]') AS text
                    FROM messages WHERE ${baseWhere} AND message_id::text IN (${params})`;
-        const r = await client.query(q, [since, until, ...chunk]);
+          const r = await client.query(q, [...paramsBase, ...chunk]);
         for (const row of r.rows) {
           const t = row.text as string;
           rootPreviews.set(row.id, t.length > 120 ? t.slice(0, 117) + '…' : t);
@@ -140,6 +162,134 @@ export async function GET(request: Request) {
       .slice(0, 10)
       .map(([root_id, replies]) => ({ root_id, replies, root_preview: rootPreviews.get(root_id) || '[outside window/no text]' }));
 
+    // Unanswered questions (>12h), root messages matching question heuristics with no replies within the window
+    const nowTs = now.getTime();
+    const questionRootsRes = await client.query(
+      `SELECT m.message_id AS id,
+              COALESCE(NULLIF(TRIM(m.text), ''), '[no text]') AS text,
+              m.sent_at
+       FROM messages m
+       WHERE ${baseWhere}
+         AND NOT (m.raw_message ? 'reply_to_message')
+         AND m.text IS NOT NULL
+         AND (
+           position('?' in m.text) > 0 OR
+           lower(m.text) LIKE '%как%' OR
+           lower(m.text) LIKE '%почему%' OR
+           lower(m.text) LIKE '%ошибк%' OR
+           lower(m.text) LIKE '%не работает%'
+         )`,
+      paramsBase
+    );
+    const directReplyToRootCountsRes = await client.query(
+      `SELECT (raw_message->'reply_to_message'->>'message_id') AS parent_id, COUNT(*)::int AS cnt
+       FROM messages
+       WHERE ${baseWhere} AND raw_message ? 'reply_to_message'
+       GROUP BY 1`,
+      paramsBase
+    );
+    const directReplyMap = new Map<string, number>(directReplyToRootCountsRes.rows.map((r: any) => [String(r.parent_id), Number(r.cnt)]));
+    const unanswered = questionRootsRes.rows
+      .filter((r: any) => !directReplyMap.has(String(r.id)))
+      .map((r: any) => {
+        const hours = Math.floor((nowTs - new Date(r.sent_at).getTime()) / 3600_000);
+        return {
+          id: String(r.id),
+          preview: (r.text as string).length > 160 ? (r.text as string).slice(0, 157) + '…' : r.text,
+          hours,
+        };
+      })
+      .filter((r: any) => r.hours >= 12)
+      .sort((a: any, b: any) => b.hours - a.hours)
+      .slice(0, 30);
+
+    // Helpers leaderboard (answers in other people's threads)
+    const helpersRes = await client.query(
+      `WITH RECURSIVE chain AS (
+         SELECT m.message_id::text AS reply_id,
+                m.user_id AS reply_user_id,
+                m.message_id::text AS current_id,
+                (m.raw_message->'reply_to_message'->>'message_id')::text AS parent_id
+         FROM messages m
+         WHERE ${baseWhere} AND m.raw_message ? 'reply_to_message'
+       UNION ALL
+         SELECT chain.reply_id,
+                chain.reply_user_id,
+                p.message_id::text AS current_id,
+                (p.raw_message->'reply_to_message'->>'message_id')::text AS parent_id
+         FROM chain
+         JOIN messages p ON p.message_id::text = chain.parent_id
+       )
+       SELECT c.reply_user_id AS helper_user_id,
+              COALESCE(NULLIF(TRIM(u.username), ''), NULL) AS username,
+              COALESCE(NULLIF(TRIM(u.first_name), ''), NULL) AS first_name,
+              COALESCE(NULLIF(TRIM(u.last_name), ''), NULL) AS last_name,
+              COUNT(*)::int AS cnt
+       FROM (
+         SELECT reply_id, reply_user_id, current_id AS root_id
+         FROM chain
+         WHERE parent_id IS NULL
+       ) c
+       JOIN messages root_msg ON root_msg.message_id::text = c.root_id
+       LEFT JOIN users u ON u.id = c.reply_user_id
+       WHERE c.reply_user_id <> root_msg.user_id
+       GROUP BY c.reply_user_id, username, first_name, last_name
+       ORDER BY cnt DESC
+       LIMIT 10`,
+      paramsBase
+    );
+    const topHelpers = helpersRes.rows.map((r: any) => ({ user: normalizeUsernameOrId(r), cnt: Number(r.cnt) }));
+
+    // Error digest
+    const errorTokenCounts = new Map<string, number>();
+    const errorRegex = /([A-Z_]{3,}|[Ee]rror|Exception|ECONN|429|403|Forbidden|timeout|rate limit)/g;
+    for (const row of textsRes.rows) {
+      if (!row.text) continue;
+      const matches = (row.text as string).match(errorRegex) || [];
+      for (const m of matches) {
+        const token = /[A-Z_]{3,}/.test(m) ? m : m.toLowerCase();
+        errorTokenCounts.set(token, (errorTokenCounts.get(token) || 0) + 1);
+      }
+    }
+    const topErrors = Array.from(errorTokenCounts.entries())
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 20)
+      .map(([token, cnt]) => ({ token, cnt }));
+
+    // Artifacts / Ship-it
+    const artifactsDomains = ['github', 'vercel', 'netlify', 'replit', 'pages.dev'];
+    const artifacts = [] as Array<{ id: string; url?: string; hasCode?: boolean; preview: string }>;
+    for (const row of textsRes.rows) {
+      const text: string | undefined = row.text || undefined;
+      if (!text) continue;
+      const links = extractLinks(text);
+      const rel = links.find((u) => artifactsDomains.some((d) => u.includes(d)));
+      const hasCode = text.includes('```');
+      if (rel || hasCode) {
+        artifacts.push({
+          id: String(row.id),
+          url: rel,
+          hasCode: hasCode || undefined,
+          preview: text.length > 140 ? text.slice(0, 137) + '…' : text,
+        });
+      }
+    }
+    const artifactsLimited = artifacts.slice(0, 20);
+
+    // Hashtags and mentions
+    const hashtagCounts = new Map<string, number>();
+    const mentionCounts = new Map<string, number>();
+    for (const row of textsRes.rows) {
+      const t: string | undefined = row.text || undefined;
+      if (!t) continue;
+      const hashtags = t.match(/#[A-Za-zА-Яа-я0-9_]+/g) || [];
+      const mentions = t.match(/@[A-Za-zA-Яа-я0-9_]+/g) || [];
+      for (const h of hashtags) hashtagCounts.set(h.toLowerCase(), (hashtagCounts.get(h.toLowerCase()) || 0) + 1);
+      for (const m of mentions) mentionCounts.set(m.toLowerCase(), (mentionCounts.get(m.toLowerCase()) || 0) + 1);
+    }
+    const topHashtags = Array.from(hashtagCounts.entries()).sort((a, b) => b[1] - a[1]).slice(0, 10).map(([token, cnt]) => ({ token, cnt }));
+    const topMentions = Array.from(mentionCounts.entries()).sort((a, b) => b[1] - a[1]).slice(0, 10).map(([token, cnt]) => ({ token, cnt }));
+
     const hourlyPeak = hourly.length > 0 ? hourly.reduce((a, b) => (b.cnt > a.cnt ? b : a)) : null;
     const summaryBullets: string[] = [
       `Всего ${totalMsgs} сообщений`,
@@ -150,6 +300,8 @@ export async function GET(request: Request) {
     ];
 
     return NextResponse.json({
+      chats: chatsRes.rows.map((r: any) => ({ chat_id: String(r.chat_id), title: r.title || null, cnt: Number(r.cnt) })),
+      selected_chat_id: chatFilterEnabled ? String(chatIdParam) : null,
       kpi: { total_msgs: totalMsgs, unique_users: uniqueUsers, avg_per_user: avgPerUser, replies, with_links: withLinks },
       hourly,
       daily,
@@ -157,6 +309,12 @@ export async function GET(request: Request) {
       topLinks,
       topWords,
       topThreads,
+      unanswered,
+      topHelpers,
+      topErrors,
+      artifacts: artifactsLimited,
+      topHashtags,
+      topMentions,
       since: since.toISOString(),
       until: until.toISOString(),
       window_days: windowDays,

@@ -1,14 +1,15 @@
 export const metadata = { title: 'Telegram Dashboard' };
 
+import './globals.css';
+
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="ru">
       <head>
         <link rel="stylesheet" href="/assets/style.css" />
-        <script src="https://cdn.jsdelivr.net/npm/chart.js" defer></script>
-        <script src="/assets/dashboard.js" defer></script>
+        {/* Removed external dashboard script; charts handled via client components */}
       </head>
-      <body>{children}</body>
+      <body className="min-h-screen">{children}</body>
     </html>
   );
 }

@@ -48,6 +48,28 @@ function renderTables(data) {
   if (topWords) topWords.innerHTML = '<tr><th>Слово</th><th>Кол-во</th></tr>' + rows(data.topWords, w => `<tr><td>${w.word}</td><td>${nf.format(w.cnt)}</td></tr>`);
   const topThreads = document.getElementById('topThreads');
   if (topThreads) topThreads.innerHTML = '<tr><th>Root ID</th><th>Ответов</th><th>Превью</th></tr>' + rows(data.topThreads, t => `<tr><td>${t.root_id}</td><td>${nf.format(t.replies)}</td><td>${t.root_preview}</td></tr>`);
+
+  // New tables
+  const unanswered = document.getElementById('unanswered');
+  if (unanswered) unanswered.innerHTML = '<tr><th>ID</th><th>Превью</th><th>Часов</th></tr>' + rows(data.unanswered || [], r => `<tr><td>${r.id}</td><td>${r.preview}</td><td>${nf.format(r.hours)}</td></tr>`);
+
+  const topHelpers = document.getElementById('topHelpers');
+  if (topHelpers) topHelpers.innerHTML = '<tr><th>Пользователь</th><th>Ответов</th></tr>' + rows(data.topHelpers || [], h => `<tr><td>${h.user}</td><td>${nf.format(h.cnt)}</td></tr>`);
+
+  const topErrors = document.getElementById('topErrors');
+  if (topErrors) topErrors.innerHTML = '<tr><th>Токен</th><th>Кол-во</th></tr>' + rows(data.topErrors || [], e => `<tr><td>${e.token}</td><td>${nf.format(e.cnt)}</td></tr>`);
+
+  const artifacts = document.getElementById('artifacts');
+  if (artifacts) artifacts.innerHTML = '<tr><th>ID</th><th>Артефакт</th><th>Превью</th></tr>' + rows(data.artifacts || [], a => {
+    const badge = a.url ? `<a href="${a.url}" target="_blank" rel="noreferrer noopener">${a.url}</a>` : (a.hasCode ? 'code snippet' : '');
+    return `<tr><td>${a.id}</td><td>${badge}</td><td>${a.preview}</td></tr>`;
+  });
+
+  const topHashtags = document.getElementById('topHashtags');
+  if (topHashtags) topHashtags.innerHTML = '<tr><th>#Хэштег</th><th>Кол-во</th></tr>' + rows(data.topHashtags || [], h => `<tr><td>${h.token}</td><td>${nf.format(h.cnt)}</td></tr>`);
+
+  const topMentions = document.getElementById('topMentions');
+  if (topMentions) topMentions.innerHTML = '<tr><th>@Упоминание</th><th>Кол-во</th></tr>' + rows(data.topMentions || [], m => `<tr><td>${m.token}</td><td>${nf.format(m.cnt)}</td></tr>`);
 }
 
 function renderHourlyChart(data) {
@@ -57,11 +79,15 @@ function renderHourlyChart(data) {
   const map = new Map(data.hourly.map(h => [new Date(h.hour).toISOString().slice(0, 13) + ':00:00.000Z', h.cnt]));
   const labels = rangeHours.map(h => formatHourLocal(h));
   const series = rangeHours.map(h => map.get(h) || 0);
-  new Chart(ctx, {
+  if (ctx._chartInstance) { ctx._chartInstance.destroy(); }
+  ctx.parentElement.style.height = '240px';
+  ctx.parentElement.style.minHeight = '240px';
+  const chart = new Chart(ctx, {
     type: 'line',
     data: { labels, datasets: [{ label: 'Сообщений/час', data: series, tension: 0.3, borderColor: '#7c9cff', backgroundColor: 'rgba(124,156,255,0.15)', fill: true, pointRadius: 2 }] },
     options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } }, scales: { x: { grid: { color: '#1f2432' } }, y: { grid: { color: '#1f2432' } } } }
   });
+  ctx._chartInstance = chart;
 }
 
 function renderDailyChart(data) {
@@ -93,13 +119,16 @@ async function initDashboard(days = 1) {
 }
 
 function refresh() {
-  const daysAttr = document.body.getAttribute('data-days');
-  const days = daysAttr ? parseInt(daysAttr, 10) : 1;
+  let days = 1;
+  const carrier = document.querySelector('[data-days]');
+  if (carrier) {
+    const v = parseInt(carrier.getAttribute('data-days'), 10);
+    if (!Number.isNaN(v) && v > 0) days = v;
+  }
   initDashboard(days);
 }
 
-window.addEventListener('DOMContentLoaded', () => {
-  refresh();
-});
+// Deprecated: handled by React client component now
+// This file is retained only for backward compatibility. Safe to delete once old pages are removed.
 
 
