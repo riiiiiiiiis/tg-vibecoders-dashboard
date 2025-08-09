@@ -62,13 +62,14 @@ npm start
 
 ```mermaid
 graph TD
-  UI["Client (Browser)"] -->|"Request: date, chat_id, limit"| API["Backend API (generate-simple)"]
-  DB["Postgres (messages)"] -->|"messages[]: id, author, text"| API
-  API -->|"messages[] + strict schema"| LLM["OpenAI (Responses API)"]
-  LLM -->|"digest JSON (DAILY_DIGEST_SCHEMA)"| API
-  API -->|"digest JSON"| FMT["Markdown formatter"]
-  FMT -->|"Markdown digest"| API
-  API -->|"Response: { json, markdown }"| UI
+  UI["Клиент (браузер)"] -->|"Запрашивает дайджест за дату/чат"| API["Бэкенд (генерация дайджеста)"]
+  API -->|"Запрашивает сообщения за сутки"| DB["Postgres (messages)"]
+  DB -->|"Возвращает список сообщений"| API
+  API -->|"Передаёт сообщения и строгую схему, чтобы получить структурированный дайджест"| LLM["OpenAI (Responses API)"]
+  LLM -->|"Возвращает JSON дайджеста по схеме"| API
+  API -->|"Проверяет JSON и преобразует в Markdown для чтения"| FMT["Форматирование Markdown"]
+  FMT -->|"Готовит финальный текст дайджеста"| API
+  API -->|"Отдаёт результат пользователю (JSON + Markdown)"| UI
 ```
 
 ## Тест GPT‑5
