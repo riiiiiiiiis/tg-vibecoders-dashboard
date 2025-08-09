@@ -62,25 +62,20 @@ npm start
 
 ```mermaid
 graph TD
-  A[Клиент / UI] -->|GET /api/report/generate-simple?date| B[API: generate-simple]
-  B --> C[Postgres\nSELECT id, author, text]
-  B --> D[OpenAI Responses API\nmodel: OPENAI_MODEL\nformat: json_schema\nDAILY_DIGEST_SCHEMA]
-  D -->|JSON дайджест| B
-  B --> E[Проверка Zod\nDailyDigestSchema]
-  E -->|ok| F[renderDigest\nMarkdown]
-  F --> G[Ответ { json, markdown }]
-  E -->|fail| H[422 json_schema_validation_failed]
-
-  %% Легенда
-  classDef api fill:#dff,stroke:#06c;
-  classDef ext fill:#ffd,stroke:#c60;
-  classDef db fill:#efe,stroke:#0a0;
-  class B api;
-  class D ext;
-  class C db;
+  A["Client / UI"] -->|"GET /api/report/generate-simple?date"| B["API generate-simple"]
+  B --> C["Postgres<br/>SELECT id, author, text"]
+  B --> D["OpenAI Responses API<br/>model: OPENAI_MODEL<br/>format: json_schema<br/>DAILY_DIGEST_SCHEMA"]
+  D -->|"JSON digest"| B
+  B --> E["Zod validate<br/>DailyDigestSchema"]
+  E -->|"ok"| F["renderDigest -> markdown"]
+  F --> G["Response: json + markdown"]
+  E -->|"fail"| H["422 json_schema_validation_failed"]
 ```
 
-## Авторство
+## Тест GPT‑5
 
-Код и интеграция пайплайна (LLM + strict JSON Schema + рендер) написаны GPT‑5 по ТЗ автора.
+Пайплайн реализован и проверен GPT‑5. Быстрые проверки:
+
+- `npm run smoke:openai` — проверка Responses API и строгого JSON вывода
+- `npm run smoke:digest` — проверка схемы DAILY_DIGEST_SCHEMA на минимальном примере
 
