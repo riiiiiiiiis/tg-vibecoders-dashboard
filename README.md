@@ -62,14 +62,13 @@ npm start
 
 ```mermaid
 graph TD
-  A["Client / UI"] -->|"GET /api/report/generate-simple?date"| B["API generate-simple"]
-  B --> C["Postgres<br/>SELECT id, author, text"]
-  B --> D["OpenAI Responses API<br/>model: OPENAI_MODEL<br/>format: json_schema<br/>DAILY_DIGEST_SCHEMA"]
-  D -->|"JSON digest"| B
-  B --> E["Zod validate<br/>DailyDigestSchema"]
-  E -->|"ok"| F["renderDigest -> markdown"]
-  F --> G["Response: json + markdown"]
-  E -->|"fail"| H["422 json_schema_validation_failed"]
+  UI["Client (Browser)"] -->|"Request: date, chat_id, limit"| API["Backend API (generate-simple)"]
+  DB["Postgres (messages)"] -->|"messages[]: id, author, text"| API
+  API -->|"messages[] + strict schema"| LLM["OpenAI (Responses API)"]
+  LLM -->|"digest JSON (DAILY_DIGEST_SCHEMA)"| API
+  API -->|"digest JSON"| FMT["Markdown formatter"]
+  FMT -->|"Markdown digest"| API
+  API -->|"Response: { json, markdown }"| UI
 ```
 
 ## Тест GPT‑5
