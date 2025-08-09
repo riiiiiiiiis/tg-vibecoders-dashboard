@@ -12,7 +12,9 @@
     "dev:turbo:clean": "rm -rf .next .turbo && next dev --turbo",
     "dev:nofr": "NEXT_DISABLE_FAST_REFRESH=1 next dev",
     "build": "next build",
-    "start": "next start"
+    "start": "next start",
+    "smoke:digest": "node scripts/smoke-digest.mjs",
+    "smoke:openai": "node scripts/smoke-openai.mjs"
   },
   "engines": {
     "node": ">=18"
@@ -21,9 +23,11 @@
     "chart.js": "^4.5.0",
     "dotenv": "^16.4.5",
     "next": "15.4.6",
+    "openai": "5.12.2",
     "pg": "^8.12.0",
     "react": "19.1.1",
-    "react-dom": "19.1.1"
+    "react-dom": "19.1.1",
+    "zod": "^3.23.8"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4.1.11",
