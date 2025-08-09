@@ -1,4 +1,4 @@
-import DashboardClient from './components/DashboardClient';
+import DashboardShell from './components/DashboardShell';
 export default function Page() {
   return (
     <main className="min-h-screen">
@@ -16,7 +16,7 @@ export default function Page() {
       </header>
 
       <div className="max-w-[1400px] mx-auto p-3">
-        <DashboardClient days={1} />
+        <DashboardShell days={1} />
       </div>
     </main>
   );
