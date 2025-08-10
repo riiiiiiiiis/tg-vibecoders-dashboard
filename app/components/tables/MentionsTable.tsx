@@ -9,8 +9,8 @@ export function MentionsTable({ rows = [] }: MentionsTableProps) {
   const { formatNumber } = useNumberFormatter();
   if (rows.length === 0) return null;
   return (
-    <section className="panel overflow-auto max-h-64">
-      <h2>Упоминания</h2>
+    <section className="panel overflow-auto max-h-64 space-y-2">
+      <div className="text-xs uppercase font-bold text-gray-500 tracking-wider">Упоминания</div>
       <table>
         <thead><tr><th>@Упоминание</th><th>Кол-во</th></tr></thead>
         <tbody>

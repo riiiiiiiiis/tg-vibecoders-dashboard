@@ -17,53 +17,50 @@ async function main() {
   if (!apiKey) fail(1, 'missing_openai_key');
 
   const client = new OpenAI({ apiKey });
-  const instructions = 'Верни ОДИН JSON по DAILY_DIGEST_SCHEMA строго. Без markdown, без лишних полей.';
+  const instructions = 'Верни ОДИН JSON строго по DAILY_DIGEST_SCHEMA. Без markdown, без лишних полей.';
   const schema = {
     type: 'object',
     additionalProperties: false,
-    required: ['title', 'hot_topics', 'tools_resources', 'insights', 'awards', 'stats', 'bonus'],
+    // Responses strict mode requires listing every property in required
+    required: ['discussions', 'resources', 'unanswered_questions', 'stats', 'insights'],
     properties: {
-      title: { type: 'string' },
-      hot_topics: {
+      discussions: {
         type: 'array',
-        minItems: 3,
-        maxItems: 3,
         items: {
           type: 'object',
           additionalProperties: false,
-          required: ['title', 'description', 'examples'],
+          required: ['topic', 'question', 'participants', 'outcome'],
           properties: {
-            title: { type: 'string' },
-            description: { type: 'string' },
-            examples: { type: 'array', items: { type: 'string' } },
+            topic: { type: 'string' },
+            question: { type: 'string' },
+            participants: { type: 'array', items: { type: 'string' } },
+            outcome: { type: 'string' },
           },
         },
       },
-      tools_resources: { type: 'array', items: { type: 'string' } },
-      insights: { type: 'array', items: { type: 'string' } },
-      awards: { type: 'array', items: { type: 'string' } },
+      resources: { type: 'array', items: { type: 'string' } },
+      unanswered_questions: { type: 'array', items: { type: 'string' } },
       stats: {
         type: 'object',
-        additionalProperties: false,
-        required: ['total_messages', 'new_members', 'peak_activity'],
+        additionalProperties: { type: ['integer', 'number'] },
+        required: ['messages_count', 'participants_count'],
         properties: {
-          total_messages: { type: 'integer' },
-          new_members: { type: ['integer', 'null'] },
-          peak_activity: { type: ['string', 'null'] },
+          messages_count: { type: 'integer' },
+          participants_count: { type: 'integer' },
         },
       },
-      bonus: { type: ['string', 'null'] },
+      insights: { type: 'array', items: { type: 'string' } },
     },
   };
   const minimal = {
     messages: [
-      { id: '1', author: '@alice', text: 'Kiro вышел, огонь! скачала уже ✅' },
+      { id: '1', author: '@alice', text: 'Запустили релиз Kiro ✅' },
       { id: '2', author: '@bob', text: 'Ссылка: https://example.com/kiro' },
-      { id: '3', author: '@alice', text: 'Кто ставил на Mac? впечатления?' }
+      { id: '3', author: '@alice', text: 'Готов ли релиз к деплою? Кто протестирует?' }
     ]
   };
   const input = [
-    'Сгенерируй дайджест (3 горячих темы и т.д.) только из этих сообщений.',
+    'Собери обсуждения, вопросы без ответа и ресурсы только из этих сообщений по DAILY_DIGEST_SCHEMA.',
     '```json',
     JSON.stringify(minimal, null, 2),
     '```'

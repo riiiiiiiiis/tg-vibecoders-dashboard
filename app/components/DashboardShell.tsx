@@ -50,8 +50,16 @@ export default function DashboardShell({ days: initialDays = 1 }: { days?: numbe
     }
   }, [data, chatId]);
 
-  if (error) return <div className="panel">Ошибка загрузки</div>;
-  if (!data) return <div className="panel">Загрузка…</div>;
+  if (error) return <div className="panel text-sm text-red-800 bg-red-50 border-red-200">Ошибка загрузки</div>;
+  if (!data) return (
+    <div className="panel">
+      <div className="space-y-2 animate-pulse">
+        <div className="h-4 bg-gray-100 rounded" />
+        <div className="h-4 bg-gray-100 rounded w-11/12" />
+        <div className="h-4 bg-gray-100 rounded w-10/12" />
+      </div>
+    </div>
+  );
 
   const kpi = data?.kpi ?? { total_msgs: 0, unique_users: 0, avg_per_user: 0, replies: 0, with_links: 0 };
   const summaryBullets: string[] = Array.isArray(data?.summaryBullets) ? data.summaryBullets : [];

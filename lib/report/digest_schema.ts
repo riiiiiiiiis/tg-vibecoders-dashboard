@@ -1,65 +1,65 @@
 import { z } from 'zod';
 
-// Zod schema for the "live" daily digest
-// Mirrors the user's DAILY_DIGEST_SCHEMA JSON Schema
+// Zod schema for the new DailyDigest shape
+// Matches the Output Format in the requirements
+const DiscussionItemSchema = z.object({
+  topic: z.string(),
+  question: z.string(),
+  participants: z.array(z.string()),
+  outcome: z.string(),
+});
+
 export const DailyDigestSchema = z.object({
-  title: z.string(),
-  hot_topics: z.array(
-    z.object({
-      title: z.string(),
-      description: z.string(),
-      examples: z.array(z.string()).optional().default([]),
+  discussions: z.array(DiscussionItemSchema),
+  resources: z.array(z.string()),
+  unanswered_questions: z.array(z.string()),
+  // Keep known required stats and allow extra numeric fields from source data
+  stats: z
+    .object({
+      messages_count: z.number().int(),
+      participants_count: z.number().int(),
     })
-  ).min(3).max(3),
-  tools_resources: z.array(z.string()).optional().default([]),
-  insights: z.array(z.string()).optional().default([]),
-  awards: z.array(z.string()).optional().default([]),
-  stats: z.object({
-    total_messages: z.number().int(),
-    new_members: z.number().int().optional().nullable(),
-    peak_activity: z.string().optional().nullable(),
-  }),
-  bonus: z.string().optional().nullable(),
+    .passthrough(),
+  insights: z.array(z.string()).optional(),
 });
 
 export type DailyDigest = z.infer<typeof DailyDigestSchema>;
 
 // JSON Schema definition for OpenAI Responses API strict mode
+// Insights are optional; other top-level fields are required
 export const DailyDigestJsonSchemaForLLM: any = {
   type: 'object',
   additionalProperties: false,
-  required: ['title', 'hot_topics', 'tools_resources', 'insights', 'awards', 'stats', 'bonus'],
+  // For Responses strict mode, all properties must be listed in required, even optional ones
+  required: ['discussions', 'resources', 'unanswered_questions', 'stats', 'insights'],
   properties: {
-    title: { type: 'string' },
-    hot_topics: {
+    discussions: {
       type: 'array',
-      minItems: 3,
-      maxItems: 3,
       items: {
         type: 'object',
         additionalProperties: false,
-        required: ['title', 'description', 'examples'],
+        required: ['topic', 'question', 'participants', 'outcome'],
         properties: {
-          title: { type: 'string' },
-          description: { type: 'string' },
-          examples: { type: 'array', items: { type: 'string' } },
+          topic: { type: 'string' },
+          question: { type: 'string' },
+          participants: { type: 'array', items: { type: 'string' } },
+          outcome: { type: 'string' },
         },
       },
     },
-    tools_resources: { type: 'array', items: { type: 'string' } },
-    insights: { type: 'array', items: { type: 'string' } },
-    awards: { type: 'array', items: { type: 'string' } },
+    resources: { type: 'array', items: { type: 'string' } },
+    unanswered_questions: { type: 'array', items: { type: 'string' } },
     stats: {
       type: 'object',
-      additionalProperties: false,
-      required: ['total_messages', 'new_members', 'peak_activity'],
+      // Require core counters; allow additional numeric fields from data
+      additionalProperties: { type: ['integer', 'number'] },
+      required: ['messages_count', 'participants_count'],
       properties: {
-        total_messages: { type: 'integer' },
-        new_members: { type: ['integer', 'null'] },
-        peak_activity: { type: ['string', 'null'] },
+        messages_count: { type: 'integer' },
+        participants_count: { type: 'integer' },
       },
     },
-    bonus: { type: ['string', 'null'] },
+    insights: { type: 'array', items: { type: 'string' } },
   },
 };
 

@@ -8,8 +8,8 @@ type ForwardedFromTableProps = { rows?: Row[] };
 export function ForwardedFromTable({ rows = [] }: ForwardedFromTableProps) {
   const { formatNumber } = useNumberFormatter();
   return (
-    <section className="panel lg:col-span-3 overflow-auto">
-      <h2>Переслано из каналов (выбранный чат)</h2>
+    <section className="panel lg:col-span-3 overflow-auto space-y-2">
+      <div className="text-xs uppercase font-bold text-gray-500 tracking-wider">Переслано из каналов (выбранный чат)</div>
       <table>
         <thead><tr><th>Канал</th><th>Кол-во</th></tr></thead>
         <tbody>
@@ -29,9 +29,7 @@ export function ForwardedFromTable({ rows = [] }: ForwardedFromTableProps) {
               </tr>
             ))
           ) : (
-            <tr>
-              <td colSpan={2} className="text-[12px] text-[color:var(--muted)]">Нет пересылок в выбранном чате за окно</td>
-            </tr>
+            <tr><td colSpan={2} className="text-xs text-gray-500">Нет пересылок в выбранном чате за окно</td></tr>
           )}
         </tbody>
       </table>

@@ -1,45 +1,35 @@
 import { DailyDigest } from './digest_schema';
 
 export function renderDigest(d: DailyDigest): string {
-  const hot = (d.hot_topics || []).map((t, i) => {
-    const examples = Array.isArray(t.examples) && t.examples.length > 0
-      ? `\n💬 Примеры:\n${t.examples.map((e) => `– ${e}`).join('\n')}`
-      : '';
-    return `${i + 1}. ${t.title}\n${t.description}${examples}`;
-  }).join('\n\n');
+  const discussions = (d.discussions || [])
+    .map((t, i) => {
+      const parts = [
+        `${i + 1}. ${t.topic}`,
+        `Вопрос: ${t.question}`,
+        `Участники: ${(t.participants || []).join(', ')}`,
+        `Итог: ${t.outcome}`,
+      ];
+      return parts.join('\n');
+    })
+    .join('\n\n');
 
-  const tools = (d.tools_resources || []).map((r) => `– ${r}`).join('\n');
   const insights = (d.insights || []).map((i) => `– ${i}`).join('\n');
-  const awards = (d.awards || []).map((a) => `– ${a}`).join('\n');
 
-  const total = d.stats?.total_messages ?? 0;
-  const newMembers = d.stats?.new_members ?? '-';
-  const peak = d.stats?.peak_activity ?? '-';
+  const total = (d as any).stats?.messages_count ?? 0;
+  const participants = (d as any).stats?.participants_count ?? 0;
 
-  const bonus = d.bonus ?? '-';
-
-  return `📊 ${d.title}
-
-🔥 **Топ-3 самых горячих тем**
-${hot}
-
-🛠 **Полезные инструменты и ресурсы**
-${tools}
-
-💡 **Инсайты и лайфхаки дня**
-${insights}
-
-🏆 **Награды сообщества**
-${awards}
-
-📈 **Статистика активности**
-Всего сообщений: ${total}
-Новых участников: ${newMembers}
-Пиковое время: ${peak}
-
-🎪 **Бонус**
-${bonus}
-`;
+  // Компактный формат для одного Telegram-сообщения
+  return [
+    `📊 Ежедневный дайджест`,
+    '',
+    '💬 Ключевые обсуждения',
+    discussions,
+    '',
+    ...(insights ? ['💡 Инсайты', insights, ''] : []),
+    '📈 Статистика',
+    `Сообщений: ${total}`,
+    `Участников: ${participants}`,
+  ].join('\n');
 }
 
 

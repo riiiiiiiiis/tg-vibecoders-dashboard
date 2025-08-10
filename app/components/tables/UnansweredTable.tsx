@@ -11,8 +11,8 @@ export function UnansweredTable({ rows = [] }: UnansweredTableProps) {
   const [expanded, setExpanded] = useState<Record<number, boolean>>({});
   if (rows.length === 0) return null;
   return (
-    <section className="panel lg:col-span-2 overflow-auto max-h-[360px]">
-      <h2>Вопросы без ответа (&gt;12ч)</h2>
+    <section className="panel lg:col-span-2 overflow-auto max-h-[360px] space-y-2">
+      <div className="text-xs uppercase font-bold text-gray-500 tracking-wider">Вопросы без ответа (&gt;12ч)</div>
       <table>
         <thead><tr><th>ID</th><th>Превью</th><th>Часов</th></tr></thead>
         <tbody>
@@ -23,7 +23,7 @@ export function UnansweredTable({ rows = [] }: UnansweredTableProps) {
           ))}
           {rows.map((r, i) => (
             <tr key={`f-${i}`} style={{ display: expanded[i] ? "" : "none" }}>
-              <td colSpan={3} className="text-[12px] text-[color:var(--muted)] whitespace-pre-wrap">{r.text}</td>
+              <td colSpan={3} className="text-xs text-gray-500 whitespace-pre-wrap">{r.text}</td>
             </tr>
           ))}
         </tbody>

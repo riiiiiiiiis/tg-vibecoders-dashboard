@@ -53,7 +53,7 @@ async function main() {
 
   const requestId = res?._request_id || null;
   const start = Date.now();
-  while (res?.status && res.status !== 'completed' && Date.now() - start < 15000) {
+  while (res?.status && res.status !== 'completed' && Date.now() - start < 45000) {
     await new Promise(r => setTimeout(r, 300));
     try { res = await client.responses.retrieve(res.id); } catch {}
   }

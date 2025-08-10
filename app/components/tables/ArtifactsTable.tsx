@@ -6,8 +6,8 @@ type ArtifactsTableProps = { rows?: Row[] };
 export function ArtifactsTable({ rows = [] }: ArtifactsTableProps) {
   if (rows.length === 0) return null;
   return (
-    <section className="panel overflow-auto max-h-64">
-      <h2>Артефакты / Ship-it</h2>
+    <section className="panel overflow-auto max-h-64 space-y-2">
+      <div className="text-xs uppercase font-bold text-gray-500 tracking-wider">Артефакты / Ship-it</div>
       <table>
         <thead><tr><th>ID</th><th>Артефакт</th><th>Превью</th></tr></thead>
         <tbody>

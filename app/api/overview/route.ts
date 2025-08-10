@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server';
+export const runtime = 'nodejs';
 import { Pool } from 'pg';
 
 const pool = new Pool({
@@ -196,6 +197,7 @@ export async function GET(request: Request) {
         return {
           id: String(r.id),
           preview: (r.text as string).length > 160 ? (r.text as string).slice(0, 157) + '…' : r.text,
+          text: r.text as string,
           hours,
         };
       })
@@ -290,6 +292,193 @@ export async function GET(request: Request) {
     const topHashtags = Array.from(hashtagCounts.entries()).sort((a, b) => b[1] - a[1]).slice(0, 10).map(([token, cnt]) => ({ token, cnt }));
     const topMentions = Array.from(mentionCounts.entries()).sort((a, b) => b[1] - a[1]).slice(0, 10).map(([token, cnt]) => ({ token, cnt }));
 
+    // Forwarded-from channels aggregation with url building
+    const forwardedFromRes = await client.query(
+      `
+      WITH f AS (
+        SELECT
+          (raw_message->'forward_from_chat'->>'id') AS chat_id,
+          COALESCE(NULLIF(TRIM((raw_message->'forward_from_chat'->>'title')), ''), NULL) AS title,
+          NULLIF(TRIM((raw_message->'forward_from_chat'->>'username')), '') AS username,
+          (raw_message->>'forward_from_message_id')::int AS fwd_msg_id
+        FROM messages
+        WHERE ${baseWhere} AND raw_message ? 'forward_from_chat'
+        UNION ALL
+        SELECT
+          (raw_message->'forward_origin'->'chat'->>'id') AS chat_id,
+          COALESCE(NULLIF(TRIM((raw_message->'forward_origin'->'chat'->>'title')), ''), NULL) AS title,
+          NULLIF(TRIM((raw_message->'forward_origin'->'chat'->>'username')), '') AS username,
+          NULL::int AS fwd_msg_id
+        FROM messages
+        WHERE ${baseWhere}
+          AND raw_message ? 'forward_origin'
+          AND (raw_message->'forward_origin'->>'type') IN ('channel','chat')
+      )
+      SELECT
+        chat_id,
+        title,
+        username,
+        COUNT(*)::int AS cnt,
+        MAX(fwd_msg_id) AS sample_msg_id
+      FROM f
+      WHERE chat_id IS NOT NULL
+      GROUP BY chat_id, title, username
+      ORDER BY cnt DESC
+      LIMIT 20
+      `,
+      paramsBase
+    );
+
+    function toShortId(chatIdRaw: string | null): string | null {
+      if (!chatIdRaw) return null;
+      if (chatIdRaw.startsWith('-100')) return chatIdRaw.slice(4);
+      if (chatIdRaw.startsWith('-')) return chatIdRaw.slice(1);
+      return chatIdRaw;
+    }
+
+    const forwardedFrom = forwardedFromRes.rows.map((r: any) => {
+      const chatIdStr = String(r.chat_id);
+      const shortId = toShortId(chatIdStr);
+      const username: string | null = r.username || null;
+      const sampleMsgId: number | null = r.sample_msg_id || null;
+      const baseUrl = username ? `https://t.me/${username}` : (shortId ? `https://t.me/c/${shortId}` : null);
+      const url = sampleMsgId && !username && shortId && baseUrl ? `${baseUrl}/${sampleMsgId}` : baseUrl;
+      return {
+        chat_id: chatIdStr,
+        title: r.title || null,
+        username,
+        cnt: Number(r.cnt),
+        url,
+      } as { chat_id: string; title: string | null; username: string | null; cnt: number; url: string | null };
+    });
+
+    // Same aggregation but across all chats (ignoring chat filter)
+    const forwardedFromAllRes = await client.query(
+      `
+      WITH f AS (
+        SELECT
+          (raw_message->'forward_from_chat'->>'id') AS chat_id,
+          COALESCE(NULLIF(TRIM((raw_message->'forward_from_chat'->>'title')), ''), NULL) AS title,
+          NULLIF(TRIM((raw_message->'forward_from_chat'->>'username')), '') AS username,
+          (raw_message->>'forward_from_message_id')::int AS fwd_msg_id
+        FROM messages
+        WHERE ${baseWhereChatsOnly} AND raw_message ? 'forward_from_chat'
+        UNION ALL
+        SELECT
+          (raw_message->'forward_origin'->'chat'->>'id') AS chat_id,
+          COALESCE(NULLIF(TRIM((raw_message->'forward_origin'->'chat'->>'title')), ''), NULL) AS title,
+          NULLIF(TRIM((raw_message->'forward_origin'->'chat'->>'username')), '') AS username,
+          NULL::int AS fwd_msg_id
+        FROM messages
+        WHERE ${baseWhereChatsOnly}
+          AND raw_message ? 'forward_origin'
+          AND (raw_message->'forward_origin'->>'type') IN ('channel','chat')
+      )
+      SELECT
+        chat_id,
+        title,
+        username,
+        COUNT(*)::int AS cnt,
+        MAX(fwd_msg_id) AS sample_msg_id
+      FROM f
+      WHERE chat_id IS NOT NULL
+      GROUP BY chat_id, title, username
+      ORDER BY cnt DESC
+      LIMIT 20
+      `,
+      [since, until]
+    );
+
+    const forwardedFromAll = forwardedFromAllRes.rows.map((r: any) => {
+      const chatIdStr = String(r.chat_id);
+      const shortId = toShortId(chatIdStr);
+      const username: string | null = r.username || null;
+      const sampleMsgId: number | null = r.sample_msg_id || null;
+      const baseUrl = username ? `https://t.me/${username}` : (shortId ? `https://t.me/c/${shortId}` : null);
+      const url = sampleMsgId && !username && shortId && baseUrl ? `${baseUrl}/${sampleMsgId}` : baseUrl;
+      return {
+        chat_id: chatIdStr,
+        title: r.title || null,
+        username,
+        cnt: Number(r.cnt),
+        url,
+      } as { chat_id: string; title: string | null; username: string | null; cnt: number; url: string | null };
+    });
+
+    // Forwarded from users: within selected chat filter
+    const forwardedUsersRes = await client.query(
+      `
+      WITH u AS (
+        SELECT
+          (raw_message->'forward_from'->>'id') AS user_id,
+          NULLIF(TRIM((raw_message->'forward_from'->>'username')), '') AS username,
+          COALESCE(NULLIF(TRIM((raw_message->'forward_from'->>'first_name')), ''), NULL) AS first_name,
+          COALESCE(NULLIF(TRIM((raw_message->'forward_from'->>'last_name')), ''), NULL) AS last_name
+        FROM messages
+        WHERE ${baseWhere} AND raw_message ? 'forward_from'
+        UNION ALL
+        SELECT
+          (raw_message->'forward_origin'->'sender_user'->>'id') AS user_id,
+          NULLIF(TRIM((raw_message->'forward_origin'->'sender_user'->>'username')), '') AS username,
+          COALESCE(NULLIF(TRIM((raw_message->'forward_origin'->'sender_user'->>'first_name')), ''), NULL) AS first_name,
+          COALESCE(NULLIF(TRIM((raw_message->'forward_origin'->'sender_user'->>'last_name')), ''), NULL) AS last_name
+        FROM messages
+        WHERE ${baseWhere} AND raw_message ? 'forward_origin' AND (raw_message->'forward_origin'->>'type') = 'user'
+      )
+      SELECT user_id, username, first_name, last_name, COUNT(*)::int AS cnt
+      FROM u
+      WHERE user_id IS NOT NULL
+      GROUP BY user_id, username, first_name, last_name
+      ORDER BY cnt DESC
+      LIMIT 20
+      `,
+      paramsBase
+    );
+    const forwardedUsers = forwardedUsersRes.rows.map((r: any) => ({
+      user_id: String(r.user_id),
+      username: r.username || null,
+      name: [r.first_name, r.last_name].filter(Boolean).join(' ') || null,
+      cnt: Number(r.cnt),
+      url: r.username ? `https://t.me/${r.username}` : null,
+    } as { user_id: string; username: string | null; name: string | null; cnt: number; url: string | null }));
+
+    // Forwarded from users: across all chats (ignoring chat filter)
+    const forwardedUsersAllRes = await client.query(
+      `
+      WITH u AS (
+        SELECT
+          (raw_message->'forward_from'->>'id') AS user_id,
+          NULLIF(TRIM((raw_message->'forward_from'->>'username')), '') AS username,
+          COALESCE(NULLIF(TRIM((raw_message->'forward_from'->>'first_name')), ''), NULL) AS first_name,
+          COALESCE(NULLIF(TRIM((raw_message->'forward_from'->>'last_name')), ''), NULL) AS last_name
+        FROM messages
+        WHERE ${baseWhereChatsOnly} AND raw_message ? 'forward_from'
+        UNION ALL
+        SELECT
+          (raw_message->'forward_origin'->'sender_user'->>'id') AS user_id,
+          NULLIF(TRIM((raw_message->'forward_origin'->'sender_user'->>'username')), '') AS username,
+          COALESCE(NULLIF(TRIM((raw_message->'forward_origin'->'sender_user'->>'first_name')), ''), NULL) AS first_name,
+          COALESCE(NULLIF(TRIM((raw_message->'forward_origin'->'sender_user'->>'last_name')), ''), NULL) AS last_name
+        FROM messages
+        WHERE ${baseWhereChatsOnly} AND raw_message ? 'forward_origin' AND (raw_message->'forward_origin'->>'type') = 'user'
+      )
+      SELECT user_id, username, first_name, last_name, COUNT(*)::int AS cnt
+      FROM u
+      WHERE user_id IS NOT NULL
+      GROUP BY user_id, username, first_name, last_name
+      ORDER BY cnt DESC
+      LIMIT 20
+      `,
+      [since, until]
+    );
+    const forwardedUsersAll = forwardedUsersAllRes.rows.map((r: any) => ({
+      user_id: String(r.user_id),
+      username: r.username || null,
+      name: [r.first_name, r.last_name].filter(Boolean).join(' ') || null,
+      cnt: Number(r.cnt),
+      url: r.username ? `https://t.me/${r.username}` : null,
+    } as { user_id: string; username: string | null; name: string | null; cnt: number; url: string | null }));
+
     const hourlyPeak = hourly.length > 0 ? hourly.reduce((a, b) => (b.cnt > a.cnt ? b : a)) : null;
     const summaryBullets: string[] = [
       `Всего ${totalMsgs} сообщений`,
@@ -315,6 +504,8 @@ export async function GET(request: Request) {
       artifacts: artifactsLimited,
       topHashtags,
       topMentions,
+      forwardedFrom,
+      // forwardedFromAll removed from response per UI cleanup
       since: since.toISOString(),
       until: until.toISOString(),
       window_days: windowDays,

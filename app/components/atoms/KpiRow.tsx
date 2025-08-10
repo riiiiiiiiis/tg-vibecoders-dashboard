@@ -14,7 +14,7 @@ type KpiRowProps = {
 
 export function KpiRow({ kpi }: KpiRowProps) {
   return (
-    <div className="lg:col-span-3 grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2">
+    <div className="lg:col-span-3 grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
       <KpiCard title="Всего сообщений" value={kpi.total_msgs} id="k_total" />
       <KpiCard title="Уникальные пользователи" value={kpi.unique_users} id="k_unique" />
       <KpiCard
